@@ -371,9 +371,7 @@ def render_svg(stats):
 
 
 def render_readme():
-    return """## Hi there, I'm Edwin 👋
-
-![profile stats](./assets/profile.svg)
+    return """![profile stats](./assets/profile.svg)
 
 <sub>Stats auto-update daily via GitHub Actions.</sub>
 """
