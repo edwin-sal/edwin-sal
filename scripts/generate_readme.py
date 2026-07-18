@@ -153,21 +153,30 @@ def section_row(name, total_width):
     return [("- ", GRAY, False), (name, WHITE, False), (" " + dashes, GRAY, False)]
 
 
-def field_row(label, value, dot_width=34):
-    """value may be a plain string/number (rendered white) or a list of
-    (text, color) segments for lines that mix colors, e.g. green/red diffs."""
-    prefix = f". {label}: "
-    dots = "." * max(1, dot_width - len(prefix))
-    segments = [
+def _value_segments(value):
+    """Normalize a field value into a list of (text, color) segments."""
+    if isinstance(value, list):
+        return [(str(t), c) for t, c in value]
+    return [(str(value), WHITE)]
+
+
+def field_row(label, value, target_width):
+    """Right-align value against target_width; dots stretch to fill the gap.
+
+    value may be a plain string/number (rendered white) or a list of
+    (text, color) segments for lines that mix colors, e.g. green/red diffs.
+    """
+    value_segs = _value_segments(value)
+    value_len = sum(len(t) for t, _ in value_segs)
+    # layout: ". " + "label:" + " " + dots + " " + value
+    fixed = 2 + (len(label) + 1) + 1 + 1 + value_len
+    dots = "." * max(1, target_width - fixed)
+    return [
         (". ", GRAY, False),
         (f"{label}:", ORANGE, False),
         (" " + dots + " ", GRAY, False),
+        *[(t, c, False) for t, c in value_segs],
     ]
-    if isinstance(value, list):
-        segments += [(text, color, False) for text, color in value]
-    else:
-        segments.append((str(value), WHITE, False))
-    return segments
 
 
 def plain_row(text):
@@ -197,34 +206,42 @@ def build_rows(stats):
         (")", WHITE),
     ]
 
-    field_rows = [
-        field_row("Role", "AI Developer"),
-        field_row("Languages.Programming", "Python, TypeScript, Java"),
-        field_row("Hobbies", "Vibing"),
-        field_row("Site", "edwinsal.vercel.app"),
-        field_row("Email", "edwinsal@protonmail.com"),
-        field_row("GitHub", "github.com/edwin-sal"),
-        field_row("Repos", repos_value, dot_width=20),
-        field_row("Commits", followers_value, dot_width=20),
-        field_row("Lines of Code on GitHub", loc_value, dot_width=30),
+    # (label, value) pairs; value is a str or a list of (text, color) segments
+    fields = [
+        ("Role", "AI Developer"),
+        ("Languages.Programming", "Python, TypeScript, Java"),
+        ("Hobbies", "Vibing"),
+        ("Site", "edwinsal.vercel.app"),
+        ("Email", "edwinsal@protonmail.com"),
+        ("GitHub", "github.com/edwin-sal"),
+        ("Repos", repos_value),
+        ("Commits", followers_value),
+        ("Lines of Code on GitHub", loc_value),
     ]
-    panel_width = max(sum(len(t) for t, _, _ in row) for row in field_rows)
+
+    # panel width = widest field line with at least a couple of dots
+    panel_width = max(
+        len(label) + 5 + sum(len(t) for t, _ in _value_segments(value)) + 2
+        for label, value in fields
+    )
+
+    fr = {label: field_row(label, value, panel_width) for label, value in fields}
 
     return [
         header_row(USERNAME, panel_width),
-        field_rows[0],
-        field_rows[1],
-        field_rows[2],
+        fr["Role"],
+        fr["Languages.Programming"],
+        fr["Hobbies"],
         [],
         section_row("Contact", panel_width),
-        field_rows[3],
-        field_rows[4],
-        field_rows[5],
+        fr["Site"],
+        fr["Email"],
+        fr["GitHub"],
         [],
         section_row("GitHub Stats", panel_width),
-        field_rows[6],
-        field_rows[7],
-        field_rows[8],
+        fr["Repos"],
+        fr["Commits"],
+        fr["Lines of Code on GitHub"],
         [],
         plain_row(f"Last updated: {today} (auto)"),
     ]
