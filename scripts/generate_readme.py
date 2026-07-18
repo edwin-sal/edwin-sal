@@ -8,6 +8,8 @@ environment.
 """
 import json
 import os
+import time
+import urllib.error
 import urllib.request
 from datetime import datetime, timezone
 from xml.sax.saxutils import escape
@@ -20,6 +22,8 @@ FG = "#e6edf3"
 ORANGE = "#ffa657"
 GRAY = "#8b949e"
 WHITE = "#f0f6fc"
+GREEN = "#3fb950"
+RED = "#f85149"
 
 FONT_SIZE = 14
 LINE_HEIGHT = 18
@@ -67,41 +71,110 @@ def graphql(query):
         return json.load(resp)
 
 
+def fetch_repos():
+    repos, page = [], 1
+    while True:
+        batch = api_get(f"https://api.github.com/users/{USERNAME}/repos?per_page=100&page={page}&type=owner")
+        if not batch:
+            break
+        repos.extend(r for r in batch if not r["fork"])
+        page += 1
+    return repos
+
+
+def fetch_code_stats(repos):
+    """Sums this user's additions/deletions across all owned repos.
+
+    The contributor-stats endpoint returns 202 while GitHub computes the
+    cache; retry a few times before giving up on a given repo.
+    """
+    additions = deletions = 0
+    for repo in repos:
+        data = None
+        for attempt in range(4):
+            req = urllib.request.Request(
+                f"https://api.github.com/repos/{USERNAME}/{repo['name']}/stats/contributors",
+                headers={"Accept": "application/vnd.github+json"},
+            )
+            if TOKEN:
+                req.add_header("Authorization", f"Bearer {TOKEN}")
+            try:
+                with urllib.request.urlopen(req) as resp:
+                    if resp.status == 202:
+                        data = None
+                    else:
+                        body = resp.read()
+                        data = json.loads(body) if body else None
+            except urllib.error.HTTPError:
+                data = None
+            if data:
+                break
+            time.sleep(2)
+        if not data:
+            continue
+        for entry in data:
+            if entry.get("author", {}).get("login") == USERNAME:
+                for week in entry["weeks"]:
+                    additions += week["a"]
+                    deletions += week["d"]
+    return additions, deletions
+
+
 def fetch_stats():
     user = api_get(f"https://api.github.com/users/{USERNAME}")
+    repos = fetch_repos()
     stats = {
         "repos": user["public_repos"],
         "followers": user["followers"],
         "following": user["following"],
+        "stars": sum(r["stargazers_count"] for r in repos),
         "commits": "n/a",
+        "contributed_to": "n/a",
     }
     if TOKEN:
         gql = graphql(
-            '{ user(login: "%s") { contributionsCollection { totalCommitContributions } } }' % USERNAME
+            '{ user(login: "%s") { contributionsCollection { totalCommitContributions } '
+            "repositoriesContributedTo(first: 1) { totalCount } } }" % USERNAME
         )
-        stats["commits"] = gql["data"]["user"]["contributionsCollection"]["totalCommitContributions"]
+        u = gql["data"]["user"]
+        stats["commits"] = u["contributionsCollection"]["totalCommitContributions"]
+        stats["contributed_to"] = u["repositoriesContributedTo"]["totalCount"]
+    stats["additions"], stats["deletions"] = fetch_code_stats(repos)
     return stats
 
 
-def header_row(name, total_width=44):
-    dashes = "-" * max(1, total_width - len(name) - 1)
-    return [(name, WHITE, True), (" " + dashes, GRAY, False)]
+def _flourished_dashes(n):
+    n = max(1, n)
+    if n <= 3:
+        return "-" * n
+    return "-" * (n - 3) + "-–-"
 
 
-def section_row(name, total_width=40):
-    dashes = "-" * max(1, total_width - len(name) - 3)
-    return [("- ", GRAY, False), (name, ORANGE, True), (" " + dashes, GRAY, False)]
+def header_row(name, total_width=46):
+    dashes = _flourished_dashes(total_width - len(name) - 1)
+    return [(name, WHITE, False), (" " + dashes, GRAY, False)]
+
+
+def section_row(name, total_width=42):
+    dashes = _flourished_dashes(total_width - len(name) - 3)
+    return [("- ", GRAY, False), (name, ORANGE, False), (" " + dashes, GRAY, False)]
 
 
 def field_row(label, value, dot_width=34):
+    """value may be a plain string/number (rendered white) or a list of
+    (text, color) segments for lines that mix colors, e.g. green/red diffs."""
     prefix = f". {label}: "
     dots = "." * max(1, dot_width - len(prefix))
-    return [
+    segments = [
         (". ", GRAY, False),
         (f"{label}:", ORANGE, False),
         (" " + dots + " ", GRAY, False),
-        (str(value), WHITE, False),
     ]
+    if isinstance(value, list):
+        segments += [(text, color, False) for text, color in value]
+    else:
+        segments.append((str(value), WHITE, False))
+    return segments
 
 
 def plain_row(text):
@@ -110,21 +183,41 @@ def plain_row(text):
 
 def build_rows(stats):
     today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    repos_value = [
+        (f"{stats['repos']}", WHITE),
+        (f" {{Contributed: {stats['contributed_to']}}}", ORANGE),
+        (" | ", GRAY),
+        ("Stars:", ORANGE),
+        (f" {stats['stars']}", WHITE),
+    ]
+    followers_value = [
+        (f"{stats['commits']}", WHITE),
+        (" | ", GRAY),
+        ("Followers:", ORANGE),
+        (f" {stats['followers']}", WHITE),
+    ]
+    loc_value = [
+        (f"{stats['additions'] + stats['deletions']:,} (", WHITE),
+        (f"{stats['additions']:,}++", GREEN),
+        (", ", WHITE),
+        (f"{stats['deletions']:,}--", RED),
+        (")", WHITE),
+    ]
     return [
         header_row(USERNAME),
         field_row("Role", "AI Developer"),
         field_row("Languages.Programming", "Python, TypeScript, Java"),
         field_row("Hobbies", "Vibing"),
         [],
-        section_row("GitHub Stats"),
-        field_row("Public Repos", stats["repos"]),
-        field_row("Followers", f"{stats['followers']} | Following: {stats['following']}"),
-        field_row("Commits (last year)", stats["commits"]),
-        [],
         section_row("Contact"),
         field_row("Site", "edwinsal.vercel.app"),
         field_row("Email", "edwinsal@protonmail.com"),
         field_row("GitHub", "github.com/edwin-sal"),
+        [],
+        section_row("GitHub Stats"),
+        field_row("Repos", repos_value, dot_width=20),
+        field_row("Commits", followers_value, dot_width=20),
+        field_row("Lines of Code on GitHub", loc_value, dot_width=30),
         [],
         plain_row(f"Last updated: {today} (auto)"),
     ]
