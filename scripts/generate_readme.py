@@ -144,13 +144,23 @@ def fetch_stats():
 
 
 def header_row(name, total_width):
-    dashes = "-" * max(1, total_width - len(name) - 1)
-    return [(name, WHITE, False), (" " + dashes, GRAY, False)]
+    # A "rule" row: label text followed by a continuous drawn line to the
+    # panel's right edge. prefix_chars includes the trailing space gap.
+    return {
+        "rule": True,
+        "prefix": [(name, WHITE, False)],
+        "prefix_chars": len(name) + 1,
+        "total_width": total_width,
+    }
 
 
 def section_row(name, total_width):
-    dashes = "-" * max(1, total_width - len(name) - 3)
-    return [("- ", GRAY, False), (name, WHITE, False), (" " + dashes, GRAY, False)]
+    return {
+        "rule": True,
+        "prefix": [("- ", GRAY, False), (name, WHITE, False)],
+        "prefix_chars": 2 + len(name) + 1,
+        "total_width": total_width,
+    }
 
 
 def _value_segments(value):
@@ -250,7 +260,16 @@ def build_rows(stats):
 def render_svg(stats):
     rows = build_rows(stats)
     n_lines = max(len(ASCII_ART), len(rows))
-    max_row_chars = max((sum(len(t) for t, _, _ in row) for row in rows if row), default=0)
+    max_row_chars = max(
+        (
+            row["total_width"]
+            if isinstance(row, dict)
+            else sum(len(t) for t, _, _ in row)
+            for row in rows
+            if row
+        ),
+        default=0,
+    )
     width = int(PAD * 2 + (ART_WIDTH + 3 + max_row_chars) * CHAR_WIDTH)
     height = int(PAD * 2 + n_lines * LINE_HEIGHT)
 
@@ -280,16 +299,39 @@ def render_svg(stats):
 
         if i < len(rows) and rows[i]:
             row = rows[i]
-            char_count = sum(len(t) for t, _, _ in row)
-            tl = char_count * CHAR_WIDTH
-            spans = []
-            for text, color, bold in row:
-                weight = ' font-weight="bold"' if bold else ""
-                spans.append(f'<tspan fill="{color}"{weight} xml:space="preserve">{escape(text)}</tspan>')
-            lines.append(
-                f'<text x="{stats_x}" y="{y}" textLength="{tl:.1f}" '
-                f'lengthAdjust="spacingAndGlyphs">{"".join(spans)}</text>'
-            )
+            if isinstance(row, dict) and row.get("rule"):
+                # label prefix at fixed width, then a continuous drawn line
+                prefix = row["prefix"]
+                prefix_chars = row["prefix_chars"]
+                label_chars = prefix_chars - 1  # exclude the trailing-space gap
+                ptl = label_chars * CHAR_WIDTH
+                spans = "".join(
+                    f'<tspan fill="{c}"{" font-weight=\"bold\"" if b else ""} '
+                    f'xml:space="preserve">{escape(t)}</tspan>'
+                    for t, c, b in prefix
+                )
+                lines.append(
+                    f'<text x="{stats_x}" y="{y}" textLength="{ptl:.1f}" '
+                    f'lengthAdjust="spacingAndGlyphs">{spans}</text>'
+                )
+                line_x1 = stats_x + prefix_chars * CHAR_WIDTH
+                line_x2 = stats_x + row["total_width"] * CHAR_WIDTH
+                line_y = y - FONT_SIZE * 0.32
+                lines.append(
+                    f'<line x1="{line_x1:.1f}" y1="{line_y:.1f}" x2="{line_x2:.1f}" '
+                    f'y2="{line_y:.1f}" stroke="{GRAY}" stroke-width="1"/>'
+                )
+            else:
+                char_count = sum(len(t) for t, _, _ in row)
+                tl = char_count * CHAR_WIDTH
+                spans = []
+                for text, color, bold in row:
+                    weight = ' font-weight="bold"' if bold else ""
+                    spans.append(f'<tspan fill="{color}"{weight} xml:space="preserve">{escape(text)}</tspan>')
+                lines.append(
+                    f'<text x="{stats_x}" y="{y}" textLength="{tl:.1f}" '
+                    f'lengthAdjust="spacingAndGlyphs">{"".join(spans)}</text>'
+                )
 
     lines.append("</svg>")
     return "\n".join(lines)
