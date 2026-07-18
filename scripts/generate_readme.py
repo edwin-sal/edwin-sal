@@ -189,25 +189,45 @@ def field_row(label, value, target_width):
     ]
 
 
+def dual_field_row(llabel, lvalue, rlabel, rvalue, pipe_col, target_width):
+    """Two label:value pairs on one line, split by a "|" fixed at pipe_col.
+
+    Both halves get dot-leaders; the right value is flush to target_width.
+    Every row built at the same pipe_col aligns its divider vertically.
+    """
+    lsegs = _value_segments(lvalue)
+    rsegs = _value_segments(rvalue)
+    llen = sum(len(t) for t, _ in lsegs)
+    rlen = sum(len(t) for t, _ in rsegs)
+
+    # left half: ". " + llabel + ":" + " " + dots1 + " " + lvalue
+    # sized so the " | " divider's pipe lands on the same column every row.
+    left_fixed = 2 + (len(llabel) + 1) + 1 + 1 + llen  # everything but dots1
+    dots1 = "." * max(1, pipe_col - left_fixed)
+    left_len = left_fixed + len(dots1)
+
+    # right half: " | " + rlabel + ":" + " " + dots2 + " " + rvalue → target_width
+    right_fixed = 3 + (len(rlabel) + 1) + 1 + 1 + rlen  # everything but dots2
+    dots2 = "." * max(1, target_width - left_len - right_fixed)
+
+    return [
+        (". ", GRAY, False),
+        (f"{llabel}:", ORANGE, False),
+        (" " + dots1 + " ", GRAY, False),
+        *[(t, c, False) for t, c in lsegs],
+        (" | ", GRAY, False),
+        (f"{rlabel}:", ORANGE, False),
+        (" " + dots2 + " ", GRAY, False),
+        *[(t, c, False) for t, c in rsegs],
+    ]
+
+
 def plain_row(text):
     return [(text, GRAY, False)]
 
 
 def build_rows(stats):
     today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
-    repos_value = [
-        (f"{stats['repos']}", WHITE),
-        (f" {{Contributed: {stats['contributed_to']}}}", ORANGE),
-        (" | ", GRAY),
-        ("Stars:", ORANGE),
-        (f" {stats['stars']}", WHITE),
-    ]
-    followers_value = [
-        (f"{stats['commits']}", WHITE),
-        (" | ", GRAY),
-        ("Followers:", ORANGE),
-        (f" {stats['followers']}", WHITE),
-    ]
     loc_value = [
         (f"{stats['additions'] + stats['deletions']:,} (", WHITE),
         (f"{stats['additions']:,}++", GREEN),
@@ -216,7 +236,7 @@ def build_rows(stats):
         (")", WHITE),
     ]
 
-    # (label, value) pairs; value is a str or a list of (text, color) segments
+    # single-value (label, value) pairs; value is a str or (text, color) list
     fields = [
         ("Role", "AI Developer"),
         ("Languages.Programming", "Python, TypeScript, Java"),
@@ -224,8 +244,6 @@ def build_rows(stats):
         ("Site", "edwinsal.vercel.app"),
         ("Email", "edwinsal@protonmail.com"),
         ("GitHub", "github.com/edwin-sal"),
-        ("Repos", repos_value),
-        ("Commits", followers_value),
         ("Lines of Code on GitHub", loc_value),
     ]
 
@@ -236,6 +254,21 @@ def build_rows(stats):
     )
 
     fr = {label: field_row(label, value, panel_width) for label, value in fields}
+
+    # two-column stat rows: divider fixed so both pipes align vertically
+    repos_left = [
+        (f"{stats['repos']}", WHITE),
+        (f" {{Contributed: {stats['contributed_to']}}}", ORANGE),
+    ]
+    # left_fixed = ". " + label + ":" + " " + " " + value  (i.e. everything but dots)
+    def left_fixed(label, value):
+        return 2 + (len(label) + 1) + 1 + 1 + sum(len(t) for t, _ in _value_segments(value))
+
+    pipe_col = max(left_fixed("Repos", repos_left), left_fixed("Commits", stats["commits"])) + 2
+    repos_row = dual_field_row("Repos", repos_left, "Stars", stats["stars"], pipe_col, panel_width)
+    commits_row = dual_field_row(
+        "Commits", stats["commits"], "Followers", stats["followers"], pipe_col, panel_width
+    )
 
     return [
         header_row(USERNAME, panel_width),
@@ -249,8 +282,8 @@ def build_rows(stats):
         fr["GitHub"],
         [],
         section_row("GitHub Stats", panel_width),
-        fr["Repos"],
-        fr["Commits"],
+        repos_row,
+        commits_row,
         fr["Lines of Code on GitHub"],
         [],
         plain_row(f"Last updated: {today} (auto)"),
