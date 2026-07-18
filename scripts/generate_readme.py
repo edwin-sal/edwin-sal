@@ -267,17 +267,29 @@ def render_svg(stats):
     for i in range(n_lines):
         y = PAD + FONT_SIZE + i * LINE_HEIGHT
 
+        # Force every line to an exact pixel width (chars * CHAR_WIDTH) with
+        # lengthAdjust, so column alignment holds even when GitHub falls back
+        # to a proportional font instead of a real monospace one.
         if i < len(ASCII_ART) and ASCII_ART[i]:
+            art = ASCII_ART[i]
+            tl = len(art) * CHAR_WIDTH
             lines.append(
-                f'<text x="{art_x}" y="{y}" fill="{FG}" xml:space="preserve">{escape(ASCII_ART[i])}</text>'
+                f'<text x="{art_x}" y="{y}" fill="{FG}" xml:space="preserve" '
+                f'textLength="{tl:.1f}" lengthAdjust="spacingAndGlyphs">{escape(art)}</text>'
             )
 
         if i < len(rows) and rows[i]:
+            row = rows[i]
+            char_count = sum(len(t) for t, _, _ in row)
+            tl = char_count * CHAR_WIDTH
             spans = []
-            for text, color, bold in rows[i]:
+            for text, color, bold in row:
                 weight = ' font-weight="bold"' if bold else ""
                 spans.append(f'<tspan fill="{color}"{weight} xml:space="preserve">{escape(text)}</tspan>')
-            lines.append(f'<text x="{stats_x}" y="{y}">{"".join(spans)}</text>')
+            lines.append(
+                f'<text x="{stats_x}" y="{y}" textLength="{tl:.1f}" '
+                f'lengthAdjust="spacingAndGlyphs">{"".join(spans)}</text>'
+            )
 
     lines.append("</svg>")
     return "\n".join(lines)
