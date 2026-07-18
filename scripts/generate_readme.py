@@ -143,21 +143,14 @@ def fetch_stats():
     return stats
 
 
-def _flourished_dashes(n):
-    n = max(1, n)
-    if n <= 3:
-        return "-" * n
-    return "-" * (n - 3) + "-–-"
-
-
-def header_row(name, total_width=46):
-    dashes = _flourished_dashes(total_width - len(name) - 1)
+def header_row(name, total_width):
+    dashes = "-" * max(1, total_width - len(name) - 1)
     return [(name, WHITE, False), (" " + dashes, GRAY, False)]
 
 
-def section_row(name, total_width=42):
-    dashes = _flourished_dashes(total_width - len(name) - 3)
-    return [("- ", GRAY, False), (name, ORANGE, False), (" " + dashes, GRAY, False)]
+def section_row(name, total_width):
+    dashes = "-" * max(1, total_width - len(name) - 3)
+    return [("- ", GRAY, False), (name, WHITE, False), (" " + dashes, GRAY, False)]
 
 
 def field_row(label, value, dot_width=34):
@@ -203,21 +196,35 @@ def build_rows(stats):
         (f"{stats['deletions']:,}--", RED),
         (")", WHITE),
     ]
-    return [
-        header_row(USERNAME),
+
+    field_rows = [
         field_row("Role", "AI Developer"),
         field_row("Languages.Programming", "Python, TypeScript, Java"),
         field_row("Hobbies", "Vibing"),
-        [],
-        section_row("Contact"),
         field_row("Site", "edwinsal.vercel.app"),
         field_row("Email", "edwinsal@protonmail.com"),
         field_row("GitHub", "github.com/edwin-sal"),
-        [],
-        section_row("GitHub Stats"),
         field_row("Repos", repos_value, dot_width=20),
         field_row("Commits", followers_value, dot_width=20),
         field_row("Lines of Code on GitHub", loc_value, dot_width=30),
+    ]
+    panel_width = max(sum(len(t) for t, _, _ in row) for row in field_rows)
+
+    return [
+        header_row(USERNAME, panel_width),
+        field_rows[0],
+        field_rows[1],
+        field_rows[2],
+        [],
+        section_row("Contact", panel_width),
+        field_rows[3],
+        field_rows[4],
+        field_rows[5],
+        [],
+        section_row("GitHub Stats", panel_width),
+        field_rows[6],
+        field_rows[7],
+        field_rows[8],
         [],
         plain_row(f"Last updated: {today} (auto)"),
     ]
