@@ -6,15 +6,18 @@ neofetch-style panel is drawn as an SVG (real colored text) and embedded in
 README.md via <img>. Run with GH_TOKEN (or GITHUB_TOKEN) set in the
 environment.
 """
+import calendar
 import json
 import os
 import time
 import urllib.error
 import urllib.request
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from xml.sax.saxutils import escape
 
-USERNAME = "edwin-sal"
+USERNAME = "edwin-sal"  # GitHub login used for API calls
+DISPLAY_NAME = "edwin@sal"  # shown as the panel header
+BIRTHDAY = date(2003, 6, 3)  # for the daily-updating "Uptime" line
 TOKEN = os.environ.get("GH_TOKEN") or os.environ.get("GITHUB_TOKEN")
 
 BG = "#0d1117"
@@ -234,18 +237,53 @@ def _vlen(value):
     return sum(len(t) for t, _ in _value_segments(value))
 
 
-def build_rows(stats):
-    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+def compute_uptime(today, birthday=BIRTHDAY):
+    """Years, months, and days elapsed since birthday, as a human string."""
+    years = today.year - birthday.year
+    months = today.month - birthday.month
+    days = today.day - birthday.day
+    if days < 0:
+        months -= 1
+        prev_month = 12 if today.month == 1 else today.month - 1
+        prev_year = today.year - 1 if today.month == 1 else today.year
+        days += calendar.monthrange(prev_year, prev_month)[1]
+    if months < 0:
+        years -= 1
+        months += 12
 
-    # single-value (label, value) pairs; value is a str or (text, color) list
-    fields = [
+    def unit(n, name):
+        return f"{n} {name}" + ("" if n == 1 else "s")
+
+    return f"{unit(years, 'year')}, {unit(months, 'month')}, and {unit(days, 'day')}"
+
+
+def build_rows(stats):
+    now = datetime.now(timezone.utc)
+    today_str = now.strftime("%Y-%m-%d")
+    uptime = compute_uptime(now.date())
+
+    # single-value (label, value) pairs, grouped by section. value is a str or
+    # a list of (text, color) segments. The intro block has no section header.
+    intro = [
+        ("OS", "Debian GNU/Linux 13.5, macOS 15 (Sequoia), Windows 11, Android 13"),
+        ("Uptime", uptime),
+        ("Host", "Acer Swift 3, Mac Mini M4, Redmi 10"),
+        ("Work", "Salesperson Inc."),
         ("Role", "AI Developer"),
-        ("Languages.Programming", "Python, TypeScript, Java"),
-        ("Hobbies", "Vibing"),
-        ("Site", "edwinsal.vercel.app"),
-        ("Email", "edwinsal@protonmail.com"),
-        ("GitHub", "github.com/edwin-sal"),
     ]
+    tech = [
+        ("Models", "Sonnet 5, Opus 4.8, Gemini 3.1 Pro"),
+        ("Languages", "Bash, Python, TypeScript"),
+        ("Frameworks", "FastAPI, Next.js"),
+        ("Tools", "Terminal, Git, VS Code, Bruno"),
+        ("Platforms", "Vercel, Railway, Hostgator"),
+    ]
+    contact = [
+        ("Website", "edwinsal.vercel.app"),
+        ("Email", "edwinsal@protonmail.com"),
+        ("LinkedIn", "edwin-sal"),
+    ]
+    fields = intro + tech + contact
 
     # two-column stat rows: (llabel, lvalue, rlabel, rvalue); the pipe divider
     # is fixed at one column so all three align vertically. LOC's right side is
@@ -291,22 +329,16 @@ def build_rows(stats):
         for llabel, lvalue, rlabel, rvalue in stat_specs
     ]
 
-    return [
-        header_row(USERNAME, panel_width),
-        fr["Role"],
-        fr["Languages.Programming"],
-        fr["Hobbies"],
-        [],
-        section_row("Contact", panel_width),
-        fr["Site"],
-        fr["Email"],
-        fr["GitHub"],
-        [],
-        section_row("GitHub Stats", panel_width),
-        *stat_rows,
-        [],
-        plain_row(f"Last updated: {today} (auto)"),
-    ]
+    rows = [header_row(DISPLAY_NAME, panel_width)]
+    rows += [fr[l] for l, _ in intro]
+    rows += [[], section_row("Tech", panel_width)]
+    rows += [fr[l] for l, _ in tech]
+    rows += [[], section_row("Contact", panel_width)]
+    rows += [fr[l] for l, _ in contact]
+    rows += [[], section_row("GitHub Stats", panel_width)]
+    rows += stat_rows
+    rows += [[], plain_row(f"Last updated: {today_str} (auto)")]
+    return rows
 
 
 def render_svg(stats):
