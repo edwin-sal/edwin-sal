@@ -273,7 +273,7 @@ def build_rows(stats):
     ]
     tech = [
         ("Models", "Sonnet 5, Opus 4.8, Gemini 3.1 Pro"),
-        ("Languages", "Bash, Python, TypeScript"),
+        ("Languages", "Bash, Python, TypeScript, Java"),
         ("Frameworks", "FastAPI, Next.js"),
         ("Tools", "Terminal, Git, VS Code, Bruno"),
         ("Platforms", "Vercel, Railway, Hostgator"),
