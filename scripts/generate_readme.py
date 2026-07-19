@@ -206,19 +206,27 @@ def dual_field_row(llabel, lvalue, rlabel, rvalue, pipe_col, target_width):
     dots1 = "." * max(1, pipe_col - left_fixed)
     left_len = left_fixed + len(dots1)
 
-    # right half: " | " + rlabel + ":" + " " + dots2 + " " + rvalue → target_width
-    right_fixed = 3 + (len(rlabel) + 1) + 1 + 1 + rlen  # everything but dots2
-    dots2 = "." * max(1, target_width - left_len - right_fixed)
+    # right half. With a label: " | " + rlabel + ":" + " " + dots2 + " " + rvalue,
+    # right value flush to target_width. Without a label (e.g. the LOC breakdown):
+    # just " | " + rvalue, no dot leader.
+    if rlabel:
+        right_fixed = 3 + (len(rlabel) + 1) + 1 + 1 + rlen  # everything but dots2
+        dots2 = "." * max(1, target_width - left_len - right_fixed)
+        right_segs = [
+            (" | ", GRAY, False),
+            (f"{rlabel}:", ORANGE, False),
+            (" " + dots2 + " ", GRAY, False),
+            *[(t, c, False) for t, c in rsegs],
+        ]
+    else:
+        right_segs = [(" | ", GRAY, False), *[(t, c, False) for t, c in rsegs]]
 
     return [
         (". ", GRAY, False),
         (f"{llabel}:", ORANGE, False),
         (" " + dots1 + " ", GRAY, False),
         *[(t, c, False) for t, c in lsegs],
-        (" | ", GRAY, False),
-        (f"{rlabel}:", ORANGE, False),
-        (" " + dots2 + " ", GRAY, False),
-        *[(t, c, False) for t, c in rsegs],
+        *right_segs,
     ]
 
 
@@ -226,17 +234,12 @@ def plain_row(text):
     return [(text, GRAY, False)]
 
 
+def _vlen(value):
+    return sum(len(t) for t, _ in _value_segments(value))
+
+
 def build_rows(stats):
     today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
-    loc_value = [
-        (f"{stats['additions'] + stats['deletions']:,}", WHITE),
-        (" | ", GRAY),
-        ("(", WHITE),
-        (f"{stats['additions']:,}++", GREEN),
-        (", ", WHITE),
-        (f"{stats['deletions']:,}--", RED),
-        (")", WHITE),
-    ]
 
     # single-value (label, value) pairs; value is a str or (text, color) list
     fields = [
@@ -246,31 +249,51 @@ def build_rows(stats):
         ("Site", "edwinsal.vercel.app"),
         ("Email", "edwinsal@protonmail.com"),
         ("GitHub", "github.com/edwin-sal"),
-        ("Lines of Code on GitHub", loc_value),
     ]
 
-    # panel width = widest field line with at least a couple of dots
-    panel_width = max(
-        len(label) + 5 + sum(len(t) for t, _ in _value_segments(value)) + 2
-        for label, value in fields
-    )
-
-    fr = {label: field_row(label, value, panel_width) for label, value in fields}
-
-    # two-column stat rows: divider fixed so both pipes align vertically
+    # two-column stat rows: (llabel, lvalue, rlabel, rvalue); the pipe divider
+    # is fixed at one column so all three align vertically. LOC's right side is
+    # the green/red breakdown with no second label.
+    total_loc = stats["additions"] + stats["deletions"]
+    loc_breakdown = [
+        ("(", WHITE),
+        (f"{stats['additions']:,}++", GREEN),
+        (", ", WHITE),
+        (f"{stats['deletions']:,}--", RED),
+        (")", WHITE),
+    ]
     repos_left = [
         (f"{stats['repos']}", WHITE),
         (f" {{Contributed: {stats['contributed_to']}}}", ORANGE),
     ]
-    # left_fixed = ". " + label + ":" + " " + " " + value  (i.e. everything but dots)
-    def left_fixed(label, value):
-        return 2 + (len(label) + 1) + 1 + 1 + sum(len(t) for t, _ in _value_segments(value))
+    stat_specs = [
+        ("Repos", repos_left, "Stars", stats["stars"]),
+        ("Commits", stats["commits"], "Followers", stats["followers"]),
+        ("Lines of Code on GitHub", f"{total_loc:,}", "", loc_breakdown),
+    ]
 
-    pipe_col = max(left_fixed("Repos", repos_left), left_fixed("Commits", stats["commits"])) + 2
-    repos_row = dual_field_row("Repos", repos_left, "Stars", stats["stars"], pipe_col, panel_width)
-    commits_row = dual_field_row(
-        "Commits", stats["commits"], "Followers", stats["followers"], pipe_col, panel_width
-    )
+    # left_fixed = everything on the left half but the dot leader
+    def left_fixed(label, value):
+        return 2 + (len(label) + 1) + 1 + 1 + _vlen(value)
+
+    def right_fixed(rlabel, rvalue):
+        if not rlabel:
+            return 3 + _vlen(rvalue)  # just " | " + value
+        return 3 + (len(rlabel) + 1) + 1 + 1 + _vlen(rvalue)
+
+    # pipe column clears the longest left half (LOC's label is the long one)
+    pipe_col = max(left_fixed(s[0], s[1]) for s in stat_specs) + 2
+
+    # panel width must fit the widest field line and the widest stat line
+    field_natural = max(len(l) + 5 + _vlen(v) + 2 for l, v in fields)
+    stat_natural = max(pipe_col + right_fixed(s[2], s[3]) for s in stat_specs)
+    panel_width = max(field_natural, stat_natural)
+
+    fr = {label: field_row(label, value, panel_width) for label, value in fields}
+    stat_rows = [
+        dual_field_row(llabel, lvalue, rlabel, rvalue, pipe_col, panel_width)
+        for llabel, lvalue, rlabel, rvalue in stat_specs
+    ]
 
     return [
         header_row(USERNAME, panel_width),
@@ -284,9 +307,7 @@ def build_rows(stats):
         fr["GitHub"],
         [],
         section_row("GitHub Stats", panel_width),
-        repos_row,
-        commits_row,
-        fr["Lines of Code on GitHub"],
+        *stat_rows,
         [],
         plain_row(f"Last updated: {today} (auto)"),
     ]
