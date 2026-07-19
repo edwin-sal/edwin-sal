@@ -229,7 +229,9 @@ def plain_row(text):
 def build_rows(stats):
     today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
     loc_value = [
-        (f"{stats['additions'] + stats['deletions']:,} (", WHITE),
+        (f"{stats['additions'] + stats['deletions']:,}", WHITE),
+        (" | ", GRAY),
+        ("(", WHITE),
         (f"{stats['additions']:,}++", GREEN),
         (", ", WHITE),
         (f"{stats['deletions']:,}--", RED),
