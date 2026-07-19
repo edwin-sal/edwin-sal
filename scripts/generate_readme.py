@@ -155,12 +155,8 @@ def header_row(name, total_width):
 
 
 def section_row(name, total_width):
-    return {
-        "rule": True,
-        "prefix": [("- ", GRAY, False), (name, WHITE, False)],
-        "prefix_chars": 2 + len(name) + 1,
-        "total_width": total_width,
-    }
+    # Same styling as header_row (no "- " prefix) for visual consistency.
+    return header_row(name, total_width)
 
 
 def _value_segments(value):
